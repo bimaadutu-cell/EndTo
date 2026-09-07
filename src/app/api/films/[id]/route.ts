@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getTmdbKey } from "@/lib/app-config";
 
 const TMDB_BASE_URL = "https://api.themoviedb.org/3";
 
@@ -8,40 +9,22 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    let tmdbApiKey =
+      getTmdbKey() ||
+      request.cookies.get("tmdb_api_key")?.value ||
+      process.env.TMDB_API_KEY ||
+      "";
 
-    // Get API key from cookies or environment
-    let tmdbApiKey = request.cookies.get("tmdb_api_key")?.value;
     if (!tmdbApiKey) {
-      tmdbApiKey = process.env.TMDB_API_KEY;
-    }
-
-    if (!tmdbApiKey) {
-      return NextResponse.json(
-        { error: "TMDB API key belum dikonfigurasi" },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "TMDB API key belum dikonfigurasi" }, { status: 500 });
     }
 
     const url = `${TMDB_BASE_URL}/movie/${id}?api_key=${tmdbApiKey}&language=id-ID`;
-
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-      },
-      next: { revalidate: 3600 },
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch from TMDB");
-    }
-
-    const data = await response.json();
+    const res = await fetch(url, { next: { revalidate: 3600 } });
+    if (!res.ok) throw new Error("Failed to fetch from TMDB");
+    const data = await res.json();
     return NextResponse.json(data);
-  } catch (error) {
-    console.error("Error fetching film detail:", error);
-    return NextResponse.json(
-      { error: "Gagal mengambil detail film" },
-      { status: 500 }
-    );
+  } catch (e: any) {
+    return NextResponse.json({ error: "Film tidak ditemukan" }, { status: 404 });
   }
 }

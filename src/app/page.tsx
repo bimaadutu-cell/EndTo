@@ -21,10 +21,17 @@ export default function HomePage() {
         setInstagramUrl(parsed.instagramUrl);
       }
     }
-    // Welcome credit on first visit
-    const hasSeenWelcome = localStorage.getItem("has_seen_welcome");
-    if (!hasSeenWelcome) {
-      setShowWelcome(true);
+    // Welcome ONLY on full page load / refresh (not client-side navigation)
+    try {
+      const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+      const isFullLoad = !nav || nav.type === "navigate" || nav.type === "reload";
+      // Also first-ever visit
+      const firstVisit = !localStorage.getItem("has_seen_welcome");
+      if (isFullLoad || firstVisit) {
+        setShowWelcome(true);
+      }
+    } catch {
+      if (!localStorage.getItem("has_seen_welcome")) setShowWelcome(true);
     }
   }, []);
 

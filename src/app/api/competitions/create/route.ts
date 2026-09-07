@@ -26,9 +26,21 @@ export async function POST(request: NextRequest) {
       createdBy: teacherId || "guruku",
     });
 
-    const baseUrl = process.env.APP_URL || process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "http://localhost:3000";
+    // Build invite URL from the actual request host (production domain)
+    // Avoid preview deployment URLs that require Vercel login
+    const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
+    const proto = request.headers.get("x-forwarded-proto") || "https";
+    let baseUrl = process.env.APP_URL || "";
+    if (!baseUrl && host) {
+      // Prefer non-preview production URL
+      if (host.includes("vercel.app") && host.includes("-")) {
+        // Preview URL pattern: project-hash-team.vercel.app -> use env or relative
+        baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${proto}://${host}`;
+      } else {
+        baseUrl = `${proto}://${host}`;
+      }
+    }
+    if (!baseUrl) baseUrl = "https://websitekelas-xtkj-rpl-tkkr.vercel.app";
 
     return NextResponse.json({
       success: true,

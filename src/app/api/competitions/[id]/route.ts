@@ -70,6 +70,10 @@ export async function POST(
   }
 
   if (action === "answer") {
+    // Teachers/hosts cannot submit answers
+    if (teacherId || body.role === "teacher") {
+      return NextResponse.json({ error: "Guru tidak boleh menjawab soal (Host Mode)" }, { status: 403 });
+    }
     if (!sessionToken || questionId === undefined || answerIndex === undefined) {
       return NextResponse.json({ error: "Data tidak lengkap" }, { status: 400 });
     }

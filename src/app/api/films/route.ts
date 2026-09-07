@@ -1,29 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getTmdbKey } from "@/lib/app-config";
 
 const TMDB_BASE_URL = "https://api.themoviedb.org/3";
 
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
+    const { searchParams } = new URL(request.url);
     const type = searchParams.get("type") || "trending";
-    const query = searchParams.get("query");
     const page = searchParams.get("page") || "1";
+    const query = searchParams.get("query");
 
-    // Get API key from cookies or environment
-    let tmdbApiKey = request.cookies.get("tmdb_api_key")?.value;
-    if (!tmdbApiKey) {
-      tmdbApiKey = process.env.TMDB_API_KEY;
-    }
+    let tmdbApiKey =
+      getTmdbKey() ||
+      request.cookies.get("tmdb_api_key")?.value ||
+      process.env.TMDB_API_KEY ||
+      "";
 
     if (!tmdbApiKey) {
       return NextResponse.json(
-        { error: "TMDB API key belum dikonfigurasi. Silakan hubungi admin untuk mengatur API key di panel admin." },
+        { error: "TMDB API key belum dikonfigurasi. Admin atur di /admin." },
         { status: 500 }
       );
     }
 
     let url = "";
-
     switch (type) {
       case "trending":
         url = `${TMDB_BASE_URL}/trending/movie/week?api_key=${tmdbApiKey}&language=id-ID&page=${page}`;
@@ -44,24 +44,12 @@ export async function GET(request: NextRequest) {
         url = `${TMDB_BASE_URL}/trending/movie/week?api_key=${tmdbApiKey}&language=id-ID&page=${page}`;
     }
 
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-      },
-      next: { revalidate: 3600 },
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch from TMDB");
-    }
-
-    const data = await response.json();
+    const res = await fetch(url, { next: { revalidate: 3600 } });
+    if (!res.ok) throw new Error("Failed to fetch from TMDB");
+    const data = await res.json();
     return NextResponse.json(data);
-  } catch (error) {
-    console.error("Error fetching films:", error);
-    return NextResponse.json(
-      { error: "Gagal mengambil data film" },
-      { status: 500 }
-    );
+  } catch (e: any) {
+    console.error("[TMDB]", e.message);
+    return NextResponse.json({ error: "Gagal memuat film" }, { status: 500 });
   }
 }

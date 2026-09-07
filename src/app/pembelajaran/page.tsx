@@ -1,188 +1,96 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Calculator, BookOpen, FlaskConical, Laptop, ArrowRight } from "lucide-react";
+import { BookOpen, CheckCircle, Circle } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import TypingText from "@/components/TypingText";
-
-const categories = [
-  {
-    id: "matematika",
-    name: "Matematika",
-    icon: Calculator,
-    color: "bg-blue-500",
-    description: "Aljabar, Geometri, Statistika, dan Logika",
-    materials: [
-      { title: "Aljabar Dasar", description: "Variabel, persamaan, dan fungsi" },
-      { title: "Persamaan Linear", description: "SPLV dan aplikasinya" },
-      { title: "Fungsi Kuadrat", description: "Grafik dan sifat fungsi" },
-      { title: "Geometri", description: "Bangun datar dan ruang" },
-      { title: "Statistika", description: "Mean, median, modus" },
-      { title: "Logika Matematika", description: "Proposisi dan ingkaran" },
-    ],
-  },
-  {
-    id: "agama",
-    name: "Agama",
-    icon: BookOpen,
-    color: "bg-green-500",
-    description: "Akhlak, Fiqih, Sejarah Islam",
-    materials: [
-      { title: "Akhlak Mulia", description: "Tata krama dan adab" },
-      { title: "Fiqih Dasar", description: "Thaharah dan shalat" },
-      { title: "Sejarah Islam", description: "Sirah Nabawiyah" },
-      { title: "Al-Qur'an Hadits", description: "Tajwid dan hadits" },
-      { title: "Aqidah", description: "Rukun Iman" },
-    ],
-  },
-  {
-    id: "sains",
-    name: "Sains",
-    icon: FlaskConical,
-    color: "bg-purple-500",
-    description: "Fisika, Biologi, Kimia",
-    materials: [
-      { title: "Fisika Dasar", description: "Gerak dan gaya" },
-      { title: "Biologi", description: "Sel dan organisme" },
-      { title: "Kimia", description: "Unsur dan senyawa" },
-      { title: "Lingkungan", description: "Ekosistem" },
-      { title: "Listrik", description: "Rangkaian listrik" },
-    ],
-  },
-  {
-    id: "informatika",
-    name: "Informatika",
-    icon: Laptop,
-    color: "bg-orange-500",
-    description: "Programming, Jaringan, Database",
-    materials: [
-      { title: "Algoritma", description: "Dasar pemrograman" },
-      { title: "HTML & CSS", description: "Web development" },
-      { title: "JavaScript", description: "Programming web" },
-      { title: "Jaringan Komputer", description: "TCP/IP, LAN, WAN" },
-      { title: "Basis Data", description: "SQL dan database" },
-      { title: "Sistem Komputer", description: "Hardware & software" },
-    ],
-  },
-];
+import { MATERIALS, CATEGORIES_LEARN } from "@/lib/learning-materials";
 
 export default function PembelajaranPage() {
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [progress, setProgress] = useState<Record<string, number>>({});
+  const [filter, setFilter] = useState("Semua");
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("learning_progress");
+      if (saved) setProgress(JSON.parse(saved));
+    } catch {}
+  }, []);
+
+  const filtered =
+    filter === "Semua"
+      ? MATERIALS
+      : MATERIALS.filter((m) => m.category === filter);
+
+  const doneCount = Object.values(progress).filter((v) => v >= 100).length;
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white flex flex-col">
       <Navbar />
-
-      <main className="pt-24 pb-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="mb-12">
-            <h1 className="text-3xl sm:text-4xl font-bold text-black mb-4">
-              <TypingText text="Materi Pembelajaran" speed={60} />
-            </h1>
-            <p className="text-gray-600 max-w-2xl">
-              Pilih kategori materi yang ingin kamu pelajari. Setiap materi
-              dilengkapi dengan penjelasan, contoh, dan quiz.
+      <main className="flex-1 pt-20 pb-16 px-4">
+        <div className="max-w-5xl mx-auto">
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-black mb-2">Pembelajaran</h1>
+            <p className="text-gray-600">
+              33 materi informatika & teknologi · {doneCount}/{MATERIALS.length} selesai
             </p>
+            <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden max-w-md">
+              <div
+                className="h-full bg-black transition-all duration-500"
+                style={{ width: `${(doneCount / MATERIALS.length) * 100}%` }}
+              />
+            </div>
           </div>
 
-          {/* Categories */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-            {categories.map((category) => (
-              <div
-                key={category.id}
-                className="border border-gray-200 rounded-2xl overflow-hidden hover:border-black hover:shadow-lg transition-all duration-300"
+          <div className="flex gap-2 overflow-x-auto pb-3 mb-6">
+            {["Semua", ...CATEGORIES_LEARN].map((c) => (
+              <button
+                key={c}
+                onClick={() => setFilter(c)}
+                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap ${
+                  filter === c ? "bg-black text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
               >
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-4">
-                      <div
-                        className={`w-14 h-14 ${category.color} text-white rounded-xl flex items-center justify-center`}
-                      >
-                        <category.icon className="w-7 h-7" />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-bold text-black">
-                          {category.name}
-                        </h2>
-                        <p className="text-sm text-gray-500">
-                          {category.description}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 mb-6">
-                    {category.materials.slice(0, 4).map((material) => (
-                      <div
-                        key={material.title}
-                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-                      >
-                        <div>
-                          <h3 className="font-medium text-black">
-                            {material.title}
-                          </h3>
-                          <p className="text-xs text-gray-500">
-                            {material.description}
-                          </p>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-gray-400" />
-                      </div>
-                    ))}
-                  </div>
-
-                  <Link
-                    href={`/pembelajaran/${category.id}`}
-                    className="inline-flex items-center gap-2 px-6 py-3 bg-black text-white font-medium rounded-xl hover:bg-gray-800 transition-colors"
-                  >
-                    Lihat Semua Materi
-                    <ArrowRight className="w-4 h-4" />
-                  </Link>
-                </div>
-              </div>
+                {c}
+              </button>
             ))}
           </div>
 
-          {/* Learning Tips */}
-          <div className="border border-gray-200 rounded-2xl p-8 bg-gray-50">
-            <h2 className="text-2xl font-bold text-black mb-6">
-              Tips Belajar Efektif
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="space-y-2">
-                <div className="w-10 h-10 bg-black text-white rounded-full flex items-center justify-center font-bold">
-                  1
-                </div>
-                <h3 className="font-semibold text-black">Pahami Konsep</h3>
-                <p className="text-sm text-gray-600">
-                  Jangan hanya menghafal, tapi pahami konsep dasar setiap materi
-                </p>
-              </div>
-              <div className="space-y-2">
-                <div className="w-10 h-10 bg-black text-white rounded-full flex items-center justify-center font-bold">
-                  2
-                </div>
-                <h3 className="font-semibold text-black">Latihan Rutin</h3>
-                <p className="text-sm text-gray-600">
-                  Kerjakan soal latihan setiap hari untuk memperkuat pemahaman
-                </p>
-              </div>
-              <div className="space-y-2">
-                <div className="w-10 h-10 bg-black text-white rounded-full flex items-center justify-center font-bold">
-                  3
-                </div>
-                <h3 className="font-semibold text-black">Diskusi</h3>
-                <p className="text-sm text-gray-600">
-                  Diskusikan materi dengan teman untuk memperdalam pemahaman
-                </p>
-              </div>
-            </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filtered.map((m) => {
+              const p = progress[m.id] || 0;
+              return (
+                <Link
+                  key={m.id}
+                  href={`/pembelajaran/${m.id}`}
+                  className="border border-gray-200 rounded-2xl p-5 hover:border-black hover:shadow-md transition-all group"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <span className="text-xs font-mono text-gray-400">#{String(m.number).padStart(2, "0")}</span>
+                    {p >= 100 ? (
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                    ) : (
+                      <Circle className="w-5 h-5 text-gray-300" />
+                    )}
+                  </div>
+                  <h3 className="font-bold text-black mb-1 group-hover:underline">{m.title}</h3>
+                  <p className="text-sm text-gray-500 mb-3 line-clamp-2">{m.description}</p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs px-2 py-0.5 bg-gray-100 rounded-full">{m.category}</span>
+                    <span className="text-xs text-gray-400">{p}%</span>
+                  </div>
+                  {p > 0 && p < 100 && (
+                    <div className="mt-2 h-1 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-black" style={{ width: `${p}%` }} />
+                    </div>
+                  )}
+                </Link>
+              );
+            })}
           </div>
         </div>
       </main>
-
       <Footer />
     </div>
   );

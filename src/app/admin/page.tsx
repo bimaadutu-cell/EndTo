@@ -13,7 +13,7 @@ export default function AdminPage() {
 
   const [config, setConfig] = useState({
     geminiApiKey: "",
-    geminiModel: "gemini-3.5-flash-lite",
+    geminiModel: "gemini-2.5-flash",
     tmdbApiKey: "",
     instagramUrl: "https://www.instagram.com/xten_alliance?stkn=eXdkbzA1M2JpY2pw",
     temperature: 0.7,
@@ -56,17 +56,36 @@ export default function AdminPage() {
 
   const handleSave = async () => {
     setIsSaving(true);
-    
-    localStorage.setItem("app_config", JSON.stringify(config));
-    document.cookie = `gemini_api_key=${config.geminiApiKey}; path=/; max-age=31536000`;
-    document.cookie = `gemini_model=${config.geminiModel}; path=/; max-age=31536000`;
-    document.cookie = `tmdb_api_key=${config.tmdbApiKey}; path=/; max-age=31536000`;
-    
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    setIsSaving(false);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
+    setError("");
+    try {
+      // Save to server so ALL users can use the keys (not just this browser)
+      const res = await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adminPassword: "admin123",
+          geminiApiKey: config.geminiApiKey,
+          geminiModel: config.geminiModel,
+          tmdbApiKey: config.tmdbApiKey,
+          instagramUrl: config.instagramUrl,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Gagal simpan ke server");
+
+      // Also keep local cookie backup
+      localStorage.setItem("app_config", JSON.stringify(config));
+      document.cookie = `gemini_api_key=${config.geminiApiKey}; path=/; max-age=31536000; SameSite=Lax`;
+      document.cookie = `gemini_model=${config.geminiModel}; path=/; max-age=31536000; SameSite=Lax`;
+      document.cookie = `tmdb_api_key=${config.tmdbApiKey}; path=/; max-age=31536000; SameSite=Lax`;
+
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (e: any) {
+      setError(e.message || "Gagal menyimpan konfigurasi");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!isAuthenticated) {
