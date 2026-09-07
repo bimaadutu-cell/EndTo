@@ -2,215 +2,152 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Search, Film, Star, Calendar, ArrowRight } from "lucide-react";
+import { Film, Search, Loader2, AlertCircle } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import TypingText from "@/components/TypingText";
 
-interface Movie {
+type Movie = {
   id: number;
   title: string;
-  poster_path: string;
-  backdrop_path: string;
-  vote_average: number;
-  release_date: string;
-  overview: string;
-}
+  poster_path: string | null;
+  release_date?: string;
+  vote_average?: number;
+};
 
 export default function FilmPage() {
-  const [activeTab, setActiveTab] = useState("trending");
   const [movies, setMovies] = useState<Movie[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [type, setType] = useState("trending");
 
-  useEffect(() => {
-    loadMovies();
-  }, [activeTab]);
-
-  const loadMovies = async () => {
-    setIsLoading(true);
+  const load = async (t = type, q = query) => {
+    setLoading(true);
     setError("");
-
     try {
-      const response = await fetch(`/api/films?type=${activeTab}`);
-      const data = await response.json();
-
-      if (data.error) {
-        setError(data.error);
+      let url = `/api/films?type=${t}`;
+      if (t === "search" && q) url = `/api/films?type=search&query=${encodeURIComponent(q)}`;
+      const res = await fetch(url);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Gagal memuat film. Admin perlu mengatur TMDB API Key di /admin.");
         setMovies([]);
       } else {
         setMovies(data.results || []);
       }
-    } catch (err) {
-      setError("Gagal memuat data film");
+    } catch {
+      setError("Koneksi gagal. Coba lagi.");
+      setMovies([]);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleSearch = async (e: React.FormEvent) => {
+  useEffect(() => {
+    load("trending");
+  }, []);
+
+  const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchQuery.trim()) {
-      loadMovies();
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const response = await fetch(`/api/films?type=search&query=${searchQuery}`);
-      const data = await response.json();
-      setMovies(data.results || []);
-    } catch (err) {
-      setError("Gagal mencari film");
-    } finally {
-      setIsLoading(false);
+    if (query.trim()) {
+      setType("search");
+      load("search", query.trim());
     }
   };
-
-  const tabs = [
-    { id: "trending", label: "Trending" },
-    { id: "popular", label: "Populer" },
-    { id: "now_playing", label: "Sedang Tayang" },
-    { id: "upcoming", label: "Akan Datang" },
-  ];
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white flex flex-col">
       <Navbar />
+      <main className="flex-1 pt-20 pb-16 px-4">
+        <div className="max-w-6xl mx-auto">
+          <h1 className="text-3xl font-bold text-black mb-2">Nonton Film</h1>
+          <p className="text-gray-600 mb-6">Jelajahi film populer</p>
 
-      <main className="pt-24 pb-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl sm:text-4xl font-bold text-black mb-4">
-              <TypingText text="Film" speed={60} />
-            </h1>
-            <p className="text-gray-600 max-w-2xl">
-              Jelajahi dunia film dengan informasi lengkap dari TMDB
-            </p>
-          </div>
-
-          {/* Search */}
-          <form onSubmit={handleSearch} className="mb-8">
-            <div className="flex gap-4">
-              <div className="flex-1 relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Cari film..."
-                  className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:outline-none focus:border-black transition-colors"
-                />
-              </div>
-              <button
-                type="submit"
-                className="px-8 py-4 bg-black text-white font-medium rounded-xl hover:bg-gray-800 transition-colors"
-              >
-                Cari
-              </button>
+          <form onSubmit={handleSearch} className="flex gap-2 mb-6">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Cari film..."
+                className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-black"
+              />
             </div>
+            <button type="submit" className="px-6 py-3 bg-black text-white rounded-xl font-medium">
+              Cari
+            </button>
           </form>
 
-          {/* Tabs */}
-          <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
-            {tabs.map((tab) => (
+          <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
+            {[
+              { id: "trending", label: "Trending" },
+              { id: "popular", label: "Populer" },
+              { id: "now_playing", label: "Sedang Tayang" },
+            ].map((t) => (
               <button
-                key={tab.id}
+                key={t.id}
                 onClick={() => {
-                  setActiveTab(tab.id);
-                  setSearchQuery("");
+                  setType(t.id);
+                  setQuery("");
+                  load(t.id);
                 }}
-                className={`px-6 py-3 rounded-xl font-medium whitespace-nowrap transition-colors ${
-                  activeTab === tab.id
-                    ? "bg-black text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap ${
+                  type === t.id ? "bg-black text-white" : "bg-gray-100 text-gray-700"
                 }`}
               >
-                {tab.label}
+                {t.label}
               </button>
             ))}
           </div>
 
-          {/* Movies Grid */}
-          {isLoading ? (
+          {loading && (
+            <div className="flex justify-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+            </div>
+          )}
+
+          {!loading && error && (
+            <div className="p-6 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm text-red-700 font-medium">{error}</p>
+                <p className="text-xs text-red-500 mt-1">
+                  Buka /admin → masukkan TMDB API Key → Save
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!loading && !error && movies.length === 0 && (
+            <p className="text-center text-gray-500 py-20">Tidak ada film ditemukan</p>
+          )}
+
+          {!loading && movies.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {Array.from({ length: 10 }).map((_, i) => (
-                <div key={i} className="animate-pulse">
-                  <div className="aspect-[2/3] bg-gray-200 rounded-xl mb-2" />
-                  <div className="h-4 bg-gray-200 rounded mb-1" />
-                  <div className="h-3 bg-gray-200 rounded w-2/3" />
-                </div>
-              ))}
-            </div>
-          ) : error ? (
-            <div className="text-center py-16">
-              <Film className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-bold text-black mb-2">
-                {error.includes("API key") ? (
-                  <>
-                    TMDB API Key Belum Dikonfigurasi
-                    <p className="text-sm text-gray-500 mt-2">
-                      Admin perlu menambahkan TMDB_API_KEY di environment variables
-                    </p>
-                  </>
-                ) : (
-                  "Gagal memuat data film"
-                )}
-              </h3>
-              <button
-                onClick={loadMovies}
-                className="mt-4 px-6 py-3 bg-black text-white font-medium rounded-xl hover:bg-gray-800 transition-colors"
-              >
-                Coba Lagi
-              </button>
-            </div>
-          ) : movies.length === 0 ? (
-            <div className="text-center py-16">
-              <Film className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-bold text-black mb-2">
-                Tidak Ada Film Ditemukan
-              </h3>
-              <p className="text-gray-600">Coba kata kunci pencarian lain</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {movies.map((movie) => (
+              {movies.map((m) => (
                 <Link
-                  key={movie.id}
-                  href={`/film/${movie.id}`}
-                  className="group"
+                  key={m.id}
+                  href={`/film/${m.id}`}
+                  className="group rounded-xl overflow-hidden border border-gray-100 hover:border-black hover:shadow-lg transition-all"
                 >
-                  <div className="aspect-[2/3] bg-gray-200 rounded-xl overflow-hidden mb-2">
-                    {movie.poster_path ? (
+                  <div className="aspect-[2/3] bg-gray-100 relative">
+                    {m.poster_path ? (
                       <img
-                        src={`https://image.tmdb.org/t/p/w500${movie.poster_path}`}
-                        alt={movie.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        src={`https://image.tmdb.org/t/p/w342${m.poster_path}`}
+                        alt={m.title}
+                        className="w-full h-full object-cover"
                         loading="lazy"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-gray-200">
-                        <Film className="w-12 h-12 text-gray-400" />
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Film className="w-10 h-10 text-gray-300" />
                       </div>
                     )}
                   </div>
-                  <h3 className="font-medium text-black text-sm line-clamp-2 group-hover:text-gray-700 transition-colors">
-                    {movie.title}
-                  </h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                    <span className="text-xs text-gray-600">
-                      {movie.vote_average?.toFixed(1) || "N/A"}
-                    </span>
-                    {movie.release_date && (
-                      <>
-                        <Calendar className="w-3 h-3 text-gray-400" />
-                        <span className="text-xs text-gray-500">
-                          {new Date(movie.release_date).getFullYear()}
-                        </span>
-                      </>
+                  <div className="p-3">
+                    <h3 className="font-medium text-sm line-clamp-2 group-hover:underline">{m.title}</h3>
+                    {m.release_date && (
+                      <p className="text-xs text-gray-400 mt-1">{m.release_date.slice(0, 4)}</p>
                     )}
                   </div>
                 </Link>
@@ -219,7 +156,6 @@ export default function FilmPage() {
           )}
         </div>
       </main>
-
       <Footer />
     </div>
   );

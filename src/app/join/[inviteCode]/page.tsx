@@ -2,53 +2,92 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Trophy, Users, AlertCircle } from "lucide-react";
+import { Trophy, Users, AlertCircle, Loader2 } from "lucide-react";
 
 export default function JoinPage() {
   const params = useParams();
   const router = useRouter();
-  const code = (params.inviteCode as string)?.toUpperCase();
+  const code = String(params?.inviteCode || "").toUpperCase().trim();
+
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
   const [error, setError] = useState("");
-  const [info, setInfo] = useState<{ name: string; status: string; playerCount: number } | null>(null);
+  const [info, setInfo] = useState<{
+    name: string;
+    status: string;
+    playerCount: number;
+    maxPlayers?: number;
+    category?: string;
+  } | null>(null);
 
   useEffect(() => {
-    if (!code) return;
-    fetch(`/api/competitions/join?code=${code}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.error) setError(d.error);
-        else setInfo(d);
-      })
-      .catch(() => setError("Gagal memuat data kompetisi"));
+    if (!code || code.length < 3) {
+      setError("Kode undangan tidak valid");
+      setChecking(false);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/competitions/join?code=${encodeURIComponent(code)}`);
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok) {
+          setError(data.error || "Undangan tidak ditemukan");
+          setInfo(null);
+        } else {
+          setInfo(data);
+          setError("");
+        }
+      } catch {
+        if (!cancelled) {
+          setError("Gagal memuat undangan. Coba refresh halaman.");
+        }
+      } finally {
+        if (!cancelled) setChecking(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [code]);
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!name.trim() || name.trim().length < 2) {
+      setError("Nama minimal 2 karakter");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
       const res = await fetch("/api/competitions/join", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inviteCode: code, playerName: name }),
+        body: JSON.stringify({ inviteCode: code, playerName: name.trim() }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Gagal bergabung");
-      // Save session
-      localStorage.setItem(
-        `comp_session_${data.competition.id}`,
-        JSON.stringify({
-          sessionToken: data.player.sessionToken,
-          playerName: data.player.name,
-          playerId: data.player.id,
-        })
-      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Gagal bergabung");
+        setLoading(false);
+        return;
+      }
+      try {
+        localStorage.setItem(
+          `comp_session_${data.competition.id}`,
+          JSON.stringify({
+            sessionToken: data.player.sessionToken,
+            playerName: data.player.name,
+            playerId: data.player.id,
+          })
+        );
+      } catch {}
       router.push(`/kompetisi/${data.competition.id}/lobby`);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
+    } catch {
+      setError("Koneksi gagal. Coba lagi.");
       setLoading(false);
     }
   };
@@ -61,58 +100,85 @@ export default function JoinPage() {
             <Trophy className="w-8 h-8" />
           </div>
           <h1 className="text-2xl font-bold text-black mb-1">Gabung Kompetisi</h1>
-          {info && <p className="text-gray-600">{info.name}</p>}
+          {info?.name && <p className="text-gray-600">{info.name}</p>}
         </div>
 
-        {error && (
+        {checking && (
+          <div className="flex justify-center py-8">
+            <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+          </div>
+        )}
+
+        {!checking && error && !info && (
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-red-700">{error}</p>
+            <div>
+              <p className="text-sm text-red-700 font-medium">{error}</p>
+              <p className="text-xs text-red-500 mt-1">
+                Pastikan kode benar dan kompetisi masih aktif. Minta guru membuat kompetisi baru jika perlu.
+              </p>
+            </div>
           </div>
         )}
 
-        {info && info.status !== "waiting" && (
-          <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-xl text-sm text-yellow-800">
-            Kompetisi sudah {info.status === "finished" ? "selesai" : "dimulai"}. Tidak bisa bergabung.
-          </div>
+        {!checking && info && (
+          <>
+            {info.status !== "waiting" && (
+              <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-xl text-sm text-yellow-800">
+                Kompetisi sudah {info.status === "finished" ? "selesai" : "dimulai"}. Tidak bisa bergabung.
+              </div>
+            )}
+
+            <div className="mb-6 flex items-center justify-center gap-2 text-sm text-gray-500">
+              <Users className="w-4 h-4" />
+              {info.playerCount} peserta sudah bergabung
+              {info.category && <span>· {info.category}</span>}
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleJoin} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Nama Kamu</label>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  minLength={2}
+                  maxLength={30}
+                  placeholder="Masukkan nama"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-black"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Kode Kompetisi</label>
+                <input
+                  value={code}
+                  readOnly
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 font-mono tracking-widest text-center text-lg"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading || info.status !== "waiting"}
+                className="w-full py-3 bg-black text-white font-medium rounded-xl hover:bg-gray-800 disabled:opacity-50"
+              >
+                {loading ? "Bergabung..." : "Gabung Sekarang"}
+              </button>
+            </form>
+          </>
         )}
 
-        {info && (
-          <div className="mb-6 flex items-center justify-center gap-2 text-sm text-gray-500">
-            <Users className="w-4 h-4" />
-            {info.playerCount} peserta sudah bergabung
-          </div>
-        )}
-
-        <form onSubmit={handleJoin} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Nama Kamu</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              minLength={2}
-              maxLength={30}
-              placeholder="Masukkan nama"
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-black"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">Kode Kompetisi</label>
-            <input
-              value={code || ""}
-              readOnly
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 font-mono tracking-widest text-center text-lg"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={loading || !info || info.status !== "waiting"}
-            className="w-full py-3 bg-black text-white font-medium rounded-xl hover:bg-gray-800 disabled:opacity-50"
-          >
-            {loading ? "Bergabung..." : "Gabung Sekarang"}
-          </button>
-        </form>
+        <p className="text-center mt-6">
+          <a href="/" className="text-sm text-gray-500 hover:text-black">
+            ← Kembali ke Beranda
+          </a>
+        </p>
       </div>
     </div>
   );

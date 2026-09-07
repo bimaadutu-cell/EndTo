@@ -107,14 +107,16 @@ export async function POST(request: NextRequest) {
         if (
           lastError.toLowerCase().includes("api key") ||
           lastError.includes("API_KEY") ||
-          lastError.includes("PERMISSION_DENIED")
+          lastError.includes("PERMISSION_DENIED") ||
+          lastError.toLowerCase().includes("denied access") ||
+          lastError.toLowerCase().includes("denied")
         ) {
           return NextResponse.json(
             {
               error:
-                "API Key Gemini tidak valid. Admin perlu mengatur ulang di /admin.",
+                "Akses AI ditolak oleh Google. Periksa: (1) API Key benar di /admin, (2) Generative Language API aktif di Google AI Studio, (3) Key tidak dibatasi IP/referrer, (4) Billing/quota project Google aktif. Buat key baru di https://aistudio.google.com/apikey",
             },
-            { status: 401 }
+            { status: 403 }
           );
         }
         // try next model
