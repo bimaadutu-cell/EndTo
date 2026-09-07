@@ -1,384 +1,496 @@
 "use client";
 
-import { useState, useRef, useEffect, ChangeEvent } from "react";
-import { Send, Brain, Sparkles, Copy, RotateCcw, StopCircle, BookOpen, Calculator, FlaskConical, Laptop, Camera, Image as ImageIcon, X } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import {
+  Send,
+  Brain,
+  Copy,
+  RotateCcw,
+  StopCircle,
+  Plus,
+  Image as ImageIcon,
+  X,
+  Check,
+  ChevronDown,
+  Loader2,
+} from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import TypingText from "@/components/TypingText";
+import {
+  AI_MODEL_CATALOG,
+  DEFAULT_MODEL_ID,
+  CHAT_MODES,
+  type ChatMode,
+} from "@/lib/ai/models";
 
-interface Message {
+type Msg = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  model?: string;
+  error?: boolean;
   image?: string;
-  timestamp: Date;
+};
+
+const HISTORY_KEY = "x_website_ai_history_v2";
+const MODEL_KEY = "x_website_ai_model";
+
+function uid() {
+  return `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-const quickActions = [
-  { icon: BookOpen, label: "Jelaskan Materi", prompt: "Jelaskan materi pembelajaran dengan bahasa yang mudah dipahami" },
-  { icon: Calculator, label: "Belajar Matematika", prompt: "Bantu saya belajar matematika dengan contoh soal" },
-  { icon: Laptop, label: "Belajar Informatika", prompt: "Bantu saya belajar informatika dan pemrograman" },
-  { icon: FlaskConical, label: "Belajar Sains", prompt: "Bantu saya belajar sains (fisika, kimia, biologi)" },
-];
-
 export default function AIPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [controller, setController] = useState<AbortController | null>(null);
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
+  const [model, setModel] = useState(DEFAULT_MODEL_ID);
+  const [mode, setMode] = useState<ChatMode>("default");
+  const [image, setImage] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showModels, setShowModels] = useState(false);
+  const [status, setStatus] = useState<"unknown" | "ok" | "error">("unknown");
+
+  const abortRef = useRef<AbortController | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Load history + model preference
+  useEffect(() => {
+    try {
+      const h = localStorage.getItem(HISTORY_KEY);
+      if (h) {
+        const parsed = JSON.parse(h);
+        if (Array.isArray(parsed)) setMessages(parsed.slice(-40));
+      }
+      const m = localStorage.getItem(MODEL_KEY);
+      if (m) setModel(m);
+    } catch {}
+  }, []);
 
   useEffect(() => {
-    scrollToBottom();
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(messages.slice(-40)));
+    } catch {}
   }, [messages]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
 
-  const handleImageSelect = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSelectedImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
+  const selectedModel = AI_MODEL_CATALOG.find((m) => m.id === model) || AI_MODEL_CATALOG[1];
 
-  const removeImage = () => {
-    setSelectedImage(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const sendMessage = async (messageText: string, image?: string) => {
-    if ((!messageText.trim() && !image) || isLoading) return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: messageText,
-      image,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setSelectedImage(null);
-    setIsLoading(true);
-    setError("");
-
-    const newController = new AbortController();
-    setController(newController);
-
-    try {
-      const requestBody: any = {
-        message: messageText || "Analisis gambar ini",
-        conversationHistory: messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
-      };
-
-      if (image) {
-        requestBody.image = image;
-      }
-
-      const response = await fetch("/api/ai/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-        signal: newController.signal,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Gagal mendapatkan respons");
-      }
-
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: data.response,
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) => [...prev, aiMessage]);
-    } catch (err: any) {
-      if (err.name === "AbortError") {
-        return;
-      }
-      setError(err.message || "Terjadi kesalahan");
-    } finally {
-      setIsLoading(false);
-      setController(null);
-    }
-  };
-
-  const handleStop = () => {
-    if (controller) {
-      controller.abort();
-      setController(null);
-      setIsLoading(false);
-    }
-  };
-
-  const handleCopy = (content: string) => {
-    navigator.clipboard.writeText(content);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    sendMessage(input, selectedImage || undefined);
-  };
-
-  const handleQuickAction = (prompt: string) => {
-    sendMessage(prompt);
-  };
-
-  const clearChat = () => {
+  const newChat = () => {
+    if (loading) return;
     setMessages([]);
-    setError("");
+    setInput("");
+    setImage(null);
+    try {
+      localStorage.removeItem(HISTORY_KEY);
+    } catch {}
+  };
+
+  const stop = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+  };
+
+  const copyText = async (id: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    } catch {}
+  };
+
+  const onPickImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return;
+    if (file.size > 4 * 1024 * 1024) {
+      alert("Gambar maks 4MB");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setImage(String(reader.result));
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const send = useCallback(
+    async (override?: { regenerateFrom?: Msg }) => {
+      if (loading) return;
+
+      let userText = input.trim();
+      let userImage = image;
+      let historyForApi = messages;
+
+      if (override?.regenerateFrom) {
+        const idx = messages.findIndex((m) => m.id === override.regenerateFrom!.id);
+        if (idx <= 0) return;
+        // Find preceding user message
+        let userMsg = messages[idx - 1];
+        if (userMsg?.role !== "user") return;
+        userText = userMsg.content;
+        userImage = userMsg.image || null;
+        historyForApi = messages.slice(0, idx - 1);
+        // Remove old assistant reply
+        setMessages((prev) => prev.slice(0, idx));
+      } else {
+        if (!userText && !userImage) return;
+        const userMsg: Msg = {
+          id: uid(),
+          role: "user",
+          content: userText || "(gambar)",
+          image: userImage || undefined,
+        };
+        setMessages((prev) => [...prev, userMsg]);
+        historyForApi = [...messages];
+        setInput("");
+        setImage(null);
+      }
+
+      setLoading(true);
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      try {
+        const res = await fetch("/api/ai/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            message: userText,
+            image: userImage,
+            model,
+            mode,
+            conversationHistory: historyForApi
+              .filter((m) => !m.error)
+              .slice(-12)
+              .map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content })),
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          setStatus("error");
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: uid(),
+              role: "assistant",
+              content: data.error || "Gagal mendapatkan respons AI.",
+              error: true,
+              model: data.model,
+            },
+          ]);
+        } else {
+          setStatus("ok");
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: uid(),
+              role: "assistant",
+              content: data.response || "",
+              model: data.model || model,
+            },
+          ]);
+        }
+      } catch (e: any) {
+        if (e?.name === "AbortError") {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: uid(),
+              role: "assistant",
+              content: "Generasi dihentikan.",
+              error: true,
+            },
+          ]);
+        } else {
+          setStatus("error");
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: uid(),
+              role: "assistant",
+              content: "Koneksi gagal. Coba lagi.",
+              error: true,
+            },
+          ]);
+        }
+      } finally {
+        setLoading(false);
+        abortRef.current = null;
+        inputRef.current?.focus();
+      }
+    },
+    [loading, input, image, messages, model, mode]
+  );
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
   };
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white flex flex-col">
       <Navbar />
 
-      <main className="pt-24 pb-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-14 h-14 bg-black text-white rounded-2xl flex items-center justify-center">
-                <Brain className="w-7 h-7" />
+      <main className="flex-1 pt-16 pb-0 flex flex-col max-w-3xl mx-auto w-full">
+        {/* Header */}
+        <div className="sticky top-16 z-20 bg-white/95 backdrop-blur border-b border-gray-100 px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-black text-white flex items-center justify-center flex-shrink-0">
+                <Brain className="w-5 h-5" />
               </div>
-              <div>
-                <h1 className="text-3xl font-bold text-black">
-                  <TypingText text="X Website AI" speed={60} />
-                </h1>
-                <p className="text-gray-600">
-                  Asisten AI dengan kemampuan analisis gambar
+              <div className="min-w-0">
+                <h1 className="font-bold text-black text-sm sm:text-base truncate">X Website AI</h1>
+                <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                  <span
+                    className={`inline-block w-1.5 h-1.5 rounded-full ${
+                      status === "ok" ? "bg-green-500" : status === "error" ? "bg-red-500" : "bg-gray-300"
+                    }`}
+                  />
+                  {status === "ok" ? "Gemini aktif" : status === "error" ? "Gemini error" : "Siap membantu belajar"}
                 </p>
               </div>
             </div>
-          </div>
 
-          {/* Quick Actions */}
-          {messages.length === 0 && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-              {quickActions.map((action) => (
-                <button
-                  key={action.label}
-                  onClick={() => handleQuickAction(action.prompt)}
-                  className="p-4 border border-gray-200 rounded-2xl hover:border-black hover:shadow-lg transition-all text-left group"
-                >
-                  <action.icon className="w-6 h-6 text-black mb-3 group-hover:scale-110 transition-transform" />
-                  <h3 className="font-semibold text-black text-sm">
-                    {action.label}
-                  </h3>
-                </button>
-              ))}
-            </div>
-          )}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={newChat}
+                className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50"
+                title="Chat baru"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
 
-          {/* Chat Messages */}
-          <div className="border border-gray-200 rounded-2xl overflow-hidden mb-6">
-            <div className="h-[500px] overflow-y-auto p-6 space-y-6">
-              {messages.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-center">
-                  <div>
-                    <Sparkles className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-bold text-black mb-2">
-                      Mulai Percakapan
-                    </h3>
-                    <p className="text-gray-600 max-w-md">
-                      Tanyakan apa saja tentang materi pembelajaran, atau upload
-                      gambar untuk dianalisis oleh AI.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`flex ${
-                        message.role === "user" ? "justify-end" : "justify-start"
-                      }`}
-                    >
-                      <div
-                        className={`max-w-[80%] rounded-2xl p-4 ${
-                          message.role === "user"
-                            ? "bg-black text-white"
-                            : "bg-gray-100 text-black"
-                        }`}
-                      >
-                        {message.image && (
-                          <img
-                            src={message.image}
-                            alt="Uploaded"
-                            className="w-full max-w-xs rounded-lg mb-3"
-                          />
-                        )}
-                        <p className="whitespace-pre-wrap">{message.content}</p>
-                        <div className="flex items-center gap-2 mt-2">
-                          <span className="text-xs opacity-60">
-                            {message.timestamp.toLocaleTimeString("id-ID", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </span>
-                          {message.role === "assistant" && (
-                            <button
-                              onClick={() => handleCopy(message.content)}
-                              className="text-xs opacity-60 hover:opacity-100 transition-opacity"
-                              title="Salin"
-                            >
-                              <Copy className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  {isLoading && (
-                    <div className="flex justify-start">
-                      <div className="bg-gray-100 rounded-2xl p-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-                          <div
-                            className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                            style={{ animationDelay: "0.1s" }}
-                          />
-                          <div
-                            className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                            style={{ animationDelay: "0.2s" }}
-                          />
-                        </div>
-                        <p className="text-sm text-gray-500 mt-2">
-                          X Website AI sedang berpikir...
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div ref={messagesEndRef} />
-                </>
-              )}
-            </div>
-
-            {/* Error Message */}
-            {error && (
-              <div className="p-4 bg-red-50 border-t border-red-200">
-                <p className="text-sm text-red-700">{error}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Image Preview */}
-          {selectedImage && (
-            <div className="mb-4 flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
+              {/* Model selector */}
               <div className="relative">
-                <img
-                  src={selectedImage}
-                  alt="Preview"
-                  className="w-20 h-20 object-cover rounded-lg"
-                />
                 <button
-                  onClick={removeImage}
-                  className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
+                  onClick={() => setShowModels((v) => !v)}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm border border-gray-200 rounded-lg hover:bg-gray-50 max-w-[160px] sm:max-w-[200px]"
                 >
-                  <X className="w-4 h-4" />
+                  <span className="truncate">{selectedModel.name.replace("Gemini ", "")}</span>
+                  <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" />
                 </button>
+                {showModels && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setShowModels(false)} />
+                    <div className="absolute right-0 mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-lg z-40 py-1 max-h-72 overflow-y-auto">
+                      {AI_MODEL_CATALOG.filter((m) => m.enabled).map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => {
+                            setModel(m.id);
+                            try {
+                              localStorage.setItem(MODEL_KEY, m.id);
+                            } catch {}
+                            setShowModels(false);
+                          }}
+                          className={`w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 ${
+                            model === m.id ? "bg-gray-50 font-medium" : ""
+                          }`}
+                        >
+                          <div className="text-black">{m.name}</div>
+                          <div className="text-xs text-gray-500">{m.description}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
-              <p className="text-sm text-gray-600">Gambar siap dianalisis</p>
+            </div>
+          </div>
+
+          {/* Mode chips */}
+          <div className="flex gap-1.5 mt-3 overflow-x-auto pb-1 -mx-1 px-1">
+            {CHAT_MODES.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setMode(m.id)}
+                className={`px-3 py-1 rounded-full text-xs whitespace-nowrap border transition-colors ${
+                  mode === m.id
+                    ? "bg-black text-white border-black"
+                    : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {messages.length === 0 && (
+            <div className="text-center py-16 px-4">
+              <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Brain className="w-8 h-8 text-gray-400" />
+              </div>
+              <h2 className="font-bold text-lg text-black mb-2">X Website AI</h2>
+              <p className="text-sm text-gray-500 max-w-sm mx-auto mb-6">
+                Asisten belajar untuk siswa & guru kelas X TKJ/RPL/TKKR. Tanya materi, minta penjelasan, atau buat quiz.
+              </p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {[
+                  "Jelaskan apa itu IP Address",
+                  "Buat quiz HTML 5 soal",
+                  "Bantu pahami CSS Flexbox",
+                ].map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => {
+                      setInput(q);
+                      inputRef.current?.focus();
+                    }}
+                    className="text-xs px-3 py-2 border border-gray-200 rounded-full hover:bg-gray-50 text-gray-700"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
-          {/* Input */}
-          <form onSubmit={handleSubmit} className="flex gap-4">
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleImageSelect}
-              accept="image/*"
-              className="hidden"
-            />
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`max-w-[90%] sm:max-w-[85%] rounded-2xl px-4 py-3 ${
+                  msg.role === "user"
+                    ? "bg-black text-white rounded-br-md"
+                    : msg.error
+                      ? "bg-red-50 text-red-800 border border-red-100 rounded-bl-md"
+                      : "bg-gray-100 text-gray-900 rounded-bl-md"
+                }`}
+              >
+                {msg.image && (
+                  <img
+                    src={msg.image}
+                    alt="upload"
+                    className="max-h-40 rounded-lg mb-2 object-contain"
+                  />
+                )}
+                <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                {msg.role === "assistant" && !msg.error && (
+                  <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200/60">
+                    <button
+                      onClick={() => copyText(msg.id, msg.content)}
+                      className="text-xs text-gray-500 hover:text-black flex items-center gap-1"
+                    >
+                      {copiedId === msg.id ? (
+                        <>
+                          <Check className="w-3 h-3" /> Copied
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" /> Copy
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => send({ regenerateFrom: msg })}
+                      disabled={loading}
+                      className="text-xs text-gray-500 hover:text-black flex items-center gap-1 disabled:opacity-50"
+                    >
+                      <RotateCcw className="w-3 h-3" /> Regenerate
+                    </button>
+                    {msg.model && (
+                      <span className="text-[10px] text-gray-400 ml-auto truncate max-w-[120px]">
+                        {msg.model}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {loading && (
+            <div className="flex justify-start">
+              <div className="bg-gray-100 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-2 text-sm text-gray-600">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                X AI sedang berpikir...
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input */}
+        <div className="sticky bottom-0 border-t border-gray-100 bg-white px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          {image && (
+            <div className="mb-2 relative inline-block">
+              <img src={image} alt="preview" className="h-16 rounded-lg border border-gray-200" />
+              <button
+                onClick={() => setImage(null)}
+                className="absolute -top-2 -right-2 w-6 h-6 bg-black text-white rounded-full flex items-center justify-center"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-end gap-2">
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className={`p-4 border border-gray-200 rounded-xl hover:border-black transition-colors ${
-                selectedImage ? "bg-green-50 border-green-200" : ""
-              }`}
+              onClick={() => fileRef.current?.click()}
+              className="p-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 flex-shrink-0"
+              title="Upload gambar"
             >
-              {selectedImage ? (
-                <ImageIcon className="w-5 h-5 text-green-600" />
-              ) : (
-                <Camera className="w-5 h-5 text-gray-600" />
-              )}
+              <ImageIcon className="w-5 h-5 text-gray-600" />
             </button>
-            <input
-              type="text"
+
+            <textarea
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Tanyakan sesuatu atau upload gambar..."
-              className="flex-1 px-6 py-4 border border-gray-200 rounded-xl focus:outline-none focus:border-black transition-colors"
-              disabled={isLoading}
+              onKeyDown={onKeyDown}
+              rows={1}
+              placeholder="Tanyakan sesuatu..."
+              className="flex-1 resize-none px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:border-black text-sm max-h-32"
+              style={{ minHeight: 42 }}
+              disabled={loading}
             />
-            {isLoading ? (
+
+            {loading ? (
               <button
-                type="button"
-                onClick={handleStop}
-                className="px-6 py-4 bg-red-500 text-white font-medium rounded-xl hover:bg-red-600 transition-colors"
+                onClick={stop}
+                className="p-2.5 rounded-xl bg-red-500 text-white flex-shrink-0"
+                title="Stop"
               >
                 <StopCircle className="w-5 h-5" />
               </button>
             ) : (
               <button
-                type="submit"
-                disabled={!input.trim() && !selectedImage}
-                className="px-6 py-4 bg-black text-white font-medium rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => send()}
+                disabled={!input.trim() && !image}
+                className="p-2.5 rounded-xl bg-black text-white flex-shrink-0 disabled:opacity-40"
+                title="Kirim"
               >
                 <Send className="w-5 h-5" />
               </button>
             )}
-          </form>
-
-          {/* Actions */}
-          {messages.length > 0 && (
-            <div className="mt-4 flex justify-between">
-              <button
-                onClick={clearChat}
-                className="flex items-center gap-2 text-sm text-gray-500 hover:text-black transition-colors"
-              >
-                <RotateCcw className="w-4 h-4" />
-                Percakapan Baru
-              </button>
-            </div>
-          )}
-
-          {/* Info */}
-          <div className="mt-8 p-4 bg-gray-50 rounded-xl">
-            <p className="text-xs text-gray-500 text-center">
-              AI ini menggunakan Google Gemini untuk memberikan respons.
-              Upload gambar untuk analisis visual (diagram, grafik, soal, dll).
-              <br />
-              Gunakan untuk membantu pembelajaran, bukan untuk menyontek.
-            </p>
           </div>
+          <p className="text-[10px] text-gray-400 mt-1.5 text-center">
+            Model: {selectedModel.name} · Mode: {CHAT_MODES.find((m) => m.id === mode)?.label}
+          </p>
         </div>
       </main>
 
-      <Footer />
+      <div className="hidden sm:block">
+        <Footer />
+      </div>
     </div>
   );
 }
