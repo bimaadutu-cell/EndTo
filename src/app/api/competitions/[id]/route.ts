@@ -1,105 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  getCompetitionById,
-  startCompetition,
-  nextQuestion,
-  getLeaderboard,
-  submitAnswer,
-  hydrateCompetition,
-  type Competition,
-} from "@/lib/competition-store";
-
-function tryHydrate(token?: string | null) {
-  if (!token) return;
-  try {
-    const json = Buffer.from(token, "base64url").toString("utf8");
-    const data = JSON.parse(json) as Competition;
-    if (data?.id) hydrateCompetition(data);
-  } catch {}
-}
-
-
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
-  const token = request.nextUrl.searchParams.get("p") || request.nextUrl.searchParams.get("token");
-  if (token) tryHydrate(token);
-  const comp = getCompetitionById(id);
-  if (!comp) return NextResponse.json({ error: "Tidak ditemukan. Buka ulang dari link undangan guru." }, { status: 404 });
-
-  const q = comp.questions[comp.currentQuestionIndex];
-  return NextResponse.json({
-    id: comp.id,
-    name: comp.name,
-    status: comp.status,
-    currentQuestionIndex: comp.currentQuestionIndex,
-    totalQuestions: comp.questions.length,
-    timePerQuestion: comp.timePerQuestion,
-    questionStartedAt: comp.questionStartedAt,
-    playerCount: comp.players.length,
-    players: comp.players.map((p) => ({
-      id: p.id,
-      name: p.name,
-      score: p.score,
-      status: p.status,
-    })),
-    // Only send current question (no answers) when running
-    currentQuestion:
-      comp.status === "running" && q
-        ? {
-            id: q.id,
-            question: q.question,
-            options: q.options,
-            index: comp.currentQuestionIndex,
-          }
-        : null,
-    leaderboard: comp.status === "finished" ? getLeaderboard(id) : undefined,
-  });
-}
-
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
-  const body = await request.json();
-  const { action, teacherId, sessionToken, questionId, answerIndex, token } = body;
-  tryHydrate(token);
-
-  if (action === "start") {
-    const result = startCompetition(id, teacherId || "guruku");
-    if ("error" in result) return NextResponse.json({ error: result.error }, { status: 400 });
-    return NextResponse.json({ success: true, status: result.status });
-  }
-
-  if (action === "next") {
-    const result = nextQuestion(id, teacherId || "guruku");
-    if ("error" in result) return NextResponse.json({ error: result.error }, { status: 400 });
-    return NextResponse.json({
-      success: true,
-      status: result.status,
-      currentQuestionIndex: result.currentQuestionIndex,
-    });
-  }
-
-  if (action === "answer") {
-    // Teachers/hosts cannot submit answers
-    if (teacherId || body.role === "teacher") {
-      return NextResponse.json({ error: "Guru tidak boleh menjawab soal (Host Mode)" }, { status: 403 });
-    }
-    if (!sessionToken || questionId === undefined || answerIndex === undefined) {
-      return NextResponse.json({ error: "Data tidak lengkap" }, { status: 400 });
-    }
-    const result = submitAnswer(id, sessionToken, questionId, answerIndex);
-    if ("error" in result) return NextResponse.json({ error: result.error }, { status: 400 });
-    return NextResponse.json({ success: true, ...result });
-  }
-
-  if (action === "leaderboard") {
-    return NextResponse.json({ leaderboard: getLeaderboard(id) });
-  }
-
-  return NextResponse.json({ error: "Action tidak valid" }, { status: 400 });
+import { getCompetitionById, startCompetition, pauseCompetition, getLeaderboard, submitAnswer, autoTimeout, hydrateCompetition, getPlayerState, type Competition } from "@/lib/competition-store";
+export const dynamic = "force-dynamic"; export const revalidate = 0;
+function tryHydrate(token?: string | null) { if (!token) return; try { const data = JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as Competition; if (data?.id) hydrateCompetition(data); } catch {} }
+function response(comp: Competition, sessionToken?: string | null) { const player = sessionToken ? getPlayerState(comp, sessionToken) : null; return { id: comp.id, name: comp.name, status: comp.status, currentQuestionIndex: player?.player.currentQuestionIndex ?? comp.currentQuestionIndex, totalQuestions: comp.questions.length, timePerQuestion: comp.timePerQuestion, questionStartedAt: player ? comp.players.find((p) => p.sessionToken === sessionToken)?.questionStartedAt : comp.questionStartedAt, playerCount: comp.players.length, players: comp.players.map((p) => ({ id: p.id, name: p.name, score: p.score, status: p.status, currentQuestionIndex: p.currentQuestionIndex })), currentQuestion: player?.currentQuestion || null, player: player?.player || null, leaderboard: comp.status === "finished" ? getLeaderboard(comp.id) : undefined }; }
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) { const { id } = await params; tryHydrate(request.nextUrl.searchParams.get("token") || request.nextUrl.searchParams.get("p")); const comp = getCompetitionById(id); if (!comp) return NextResponse.json({ error: "Kompetisi tidak ditemukan." }, { status: 404 }); const sessionToken = request.nextUrl.searchParams.get("sessionToken"); if (sessionToken) autoTimeout(id, sessionToken); return NextResponse.json(response(comp, sessionToken), { headers: { "Cache-Control": "no-store" } }); }
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) { const { id } = await params; const body = await request.json().catch(() => ({})); tryHydrate(body.token); const { action, teacherId, sessionToken, questionId, answerIndex } = body;
+  if (action === "start") { const r = startCompetition(id, teacherId || "guruku"); return "error" in r ? NextResponse.json({ error: r.error }, { status: 400 }) : NextResponse.json({ success: true, status: r.status }); }
+  if (action === "pause" || action === "resume") { const r = pauseCompetition(id, teacherId || "guruku", action === "pause"); return "error" in r ? NextResponse.json({ error: r.error }, { status: 400 }) : NextResponse.json({ success: true, status: r.status }); }
+  if (action === "answer" || action === "timeout") { if (!sessionToken || !questionId || (action === "answer" && typeof answerIndex !== "number")) return NextResponse.json({ error: "Data jawaban tidak lengkap" }, { status: 400 }); const r = action === "timeout" ? autoTimeout(id, sessionToken) : submitAnswer(id, sessionToken, questionId, answerIndex); return !r ? NextResponse.json({ error: "Timer belum habis" }, { status: 409 }) : "error" in r ? NextResponse.json({ error: r.error }, { status: r.error.includes("sudah terjawab") ? 200 : 400 }) : NextResponse.json({ success: true, answered: true, ...r }, { headers: { "Cache-Control": "no-store" } }); }
+  if (action === "leaderboard") { return NextResponse.json({ leaderboard: getLeaderboard(id) }, { headers: { "Cache-Control": "no-store" } }); }
+  return NextResponse.json({ error: "Manual next question dinonaktifkan; soal maju otomatis setelah jawaban tersimpan." }, { status: 410 });
 }

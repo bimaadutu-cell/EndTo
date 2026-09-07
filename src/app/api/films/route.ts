@@ -1,55 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTmdbKey } from "@/lib/app-config";
-
 const TMDB_BASE_URL = "https://api.themoviedb.org/3";
-
+export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const type = searchParams.get("type") || "trending";
-    const page = searchParams.get("page") || "1";
-    const query = searchParams.get("query");
-
-    let tmdbApiKey =
-      getTmdbKey() ||
-      request.cookies.get("tmdb_api_key")?.value ||
-      process.env.TMDB_API_KEY ||
-      "";
-
-    if (!tmdbApiKey) {
-      return NextResponse.json(
-        { error: "TMDB API key belum dikonfigurasi. Admin atur di /admin." },
-        { status: 500 }
-      );
-    }
-
-    let url = "";
-    switch (type) {
-      case "trending":
-        url = `${TMDB_BASE_URL}/trending/movie/week?api_key=${tmdbApiKey}&language=id-ID&page=${page}`;
-        break;
-      case "popular":
-        url = `${TMDB_BASE_URL}/movie/popular?api_key=${tmdbApiKey}&language=id-ID&page=${page}`;
-        break;
-      case "now_playing":
-        url = `${TMDB_BASE_URL}/movie/now_playing?api_key=${tmdbApiKey}&language=id-ID&page=${page}`;
-        break;
-      case "upcoming":
-        url = `${TMDB_BASE_URL}/movie/upcoming?api_key=${tmdbApiKey}&language=id-ID&page=${page}`;
-        break;
-      case "search":
-        url = `${TMDB_BASE_URL}/search/movie?api_key=${tmdbApiKey}&language=id-ID&query=${encodeURIComponent(query || "")}&page=${page}`;
-        break;
-      default:
-        url = `${TMDB_BASE_URL}/trending/movie/week?api_key=${tmdbApiKey}&language=id-ID&page=${page}`;
-    }
-
-    const res = await fetch(url, { next: { revalidate: 3600 } });
-    if (!res.ok) throw new Error("Failed to fetch from TMDB");
-    const data = await res.json();
-    return NextResponse.json(data);
-  } catch (e: any) {
-    console.error("[TMDB]", e.message);
-    return NextResponse.json({ error: "Gagal memuat film" }, { status: 500 });
-  }
+  try { const params = request.nextUrl.searchParams; const type = params.get("type") || "trending"; const page = params.get("page") || "1"; const query = params.get("query") || ""; const key = getTmdbKey(); if (!key) return NextResponse.json({ error: "TMDB belum dikonfigurasi oleh admin." }, { status: 503 }); const routes: Record<string, string> = { trending: `/trending/movie/week`, popular: `/movie/popular`, now_playing: `/movie/now_playing`, upcoming: `/movie/upcoming` }; const endpoint = type === "search" ? `/search/movie?query=${encodeURIComponent(query)}` : (routes[type] || routes.trending); const res = await fetch(`${TMDB_BASE_URL}${endpoint}${endpoint.includes("?") ? "&" : "?"}api_key=${encodeURIComponent(key)}&language=id-ID&page=${page}`, { next: { revalidate: 3600 } }); const data = await res.json(); if (!res.ok) return NextResponse.json({ error: "TMDB provider unavailable." }, { status: res.status }); return NextResponse.json(data); } catch { return NextResponse.json({ error: "Gagal memuat film. Coba lagi." }, { status: 503 }); }
 }
