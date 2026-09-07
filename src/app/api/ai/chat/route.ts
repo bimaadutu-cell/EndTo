@@ -1,36 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getGeminiKey, getGeminiModel } from "@/lib/app-config";
+import {
+  geminiGenerateContent,
+  resolveGeminiKey,
+  DEFAULT_MODELS,
+  userFacingMessage,
+  type GeminiErrorType,
+} from "@/lib/gemini";
 
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-
-// Only current working models (no deprecated 1.5)
-const FALLBACK_MODELS = [
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-lite",
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-lite",
-  "gemini-3.5-flash",
-  "gemini-3.5-flash-lite",
-];
+export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { message, conversationHistory = [], image } = body;
 
-    // Priority: server config (admin) > env > cookie (legacy)
-    let geminiApiKey =
-      getGeminiKey() ||
-      request.cookies.get("gemini_api_key")?.value ||
-      process.env.GEMINI_API_KEY ||
-      "";
+    // Key resolution: server config (admin) > env > cookie (admin browser backup only)
+    // NO prefix validation — AQ... and AIza... both accepted
+    const apiKey = resolveGeminiKey(
+      getGeminiKey() || request.cookies.get("gemini_api_key")?.value,
+      process.env.GEMINI_API_KEY
+    );
 
-    if (!geminiApiKey.trim()) {
+    if (!apiKey) {
       return NextResponse.json(
-        {
-          error:
-            "Gemini API Key belum diatur oleh admin. Buka /admin (password: admin123), masukkan API Key dari https://aistudio.google.com/apikey lalu simpan.",
-        },
+        { error: userFacingMessage("GEMINI_API_KEY_MISSING"), errorType: "GEMINI_API_KEY_MISSING" },
         { status: 500 }
       );
     }
@@ -39,24 +33,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Pesan atau gambar diperlukan" }, { status: 400 });
     }
 
-    let geminiModel =
+    let primaryModel =
       getGeminiModel() ||
       request.cookies.get("gemini_model")?.value ||
       process.env.GEMINI_MODEL ||
       "gemini-2.5-flash";
 
-    // Strip deprecated models
-    if (geminiModel.includes("1.5") || geminiModel.includes("1.0")) {
-      geminiModel = "gemini-2.5-flash";
-    }
-
+    // Build multimodal contents
     const parts: any[] = [];
-    if (message) parts.push({ text: message });
+    if (message) parts.push({ text: String(message) });
     if (image) {
       try {
-        const base64Data = image.split(",")[1];
-        const mimeType = image.split(";")[0].split(":")[1] || "image/jpeg";
-        parts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
+        const base64Data = String(image).split(",")[1];
+        const mimeType = String(image).split(";")[0].split(":")[1] || "image/jpeg";
+        if (base64Data) {
+          parts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
+        }
       } catch {
         return NextResponse.json({ error: "Format gambar tidak valid" }, { status: 400 });
       }
@@ -65,76 +57,64 @@ export async function POST(request: NextRequest) {
     const contents = [
       ...conversationHistory.map((msg: any) => ({
         role: msg.role === "user" ? "user" : "model",
-        parts: [{ text: msg.content || "" }],
+        parts: [{ text: String(msg.content || "") }],
       })),
       { role: "user", parts },
     ];
 
-    const payload = {
-      contents,
-      generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
-    };
-
     const modelsToTry = [
-      geminiModel,
-      ...FALLBACK_MODELS.filter((m) => m !== geminiModel),
+      primaryModel,
+      ...DEFAULT_MODELS.filter((m) => m !== primaryModel),
     ];
 
-    let lastError = "Gagal mendapatkan respons dari Gemini";
+    let lastType: GeminiErrorType = "UNKNOWN_ERROR";
+    let lastMsg = "";
 
     for (const model of modelsToTry) {
-      try {
-        const res = await fetch(
-          `${GEMINI_URL}/${model}:generateContent?key=${geminiApiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          }
-        );
+      const result = await geminiGenerateContent({
+        apiKey,
+        model,
+        contents,
+        generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+      });
 
-        if (res.ok) {
-          const data = await res.json();
-          const text =
-            data.candidates?.[0]?.content?.parts?.[0]?.text ||
-            "Maaf, saya tidak bisa memproses permintaan ini.";
-          return NextResponse.json({ response: text, model });
-        }
-
-        const errData = await res.json().catch(() => ({}));
-        lastError = errData.error?.message || `Model ${model} gagal (${res.status})`;
-
-        if (
-          lastError.toLowerCase().includes("api key") ||
-          lastError.includes("API_KEY") ||
-          lastError.includes("PERMISSION_DENIED") ||
-          lastError.toLowerCase().includes("denied access") ||
-          lastError.toLowerCase().includes("denied")
-        ) {
-          return NextResponse.json(
-            {
-              error:
-                "Akses AI ditolak oleh Google. Periksa: (1) API Key benar di /admin, (2) Generative Language API aktif di Google AI Studio, (3) Key tidak dibatasi IP/referrer, (4) Billing/quota project Google aktif. Buat key baru di https://aistudio.google.com/apikey",
-            },
-            { status: 403 }
-          );
-        }
-        // try next model
-      } catch (e: any) {
-        lastError = e.message || "Network error";
+      if (result.ok) {
+        return NextResponse.json({ response: result.text, model: result.model });
       }
+
+      lastType = result.errorType;
+      lastMsg = result.message;
+
+      // Auth/project errors: don't waste time on other models with same key
+      if (
+        result.errorType === "INVALID_API_KEY" ||
+        result.errorType === "ACCESS_DENIED" ||
+        result.errorType === "GEMINI_API_KEY_MISSING"
+      ) {
+        break;
+      }
+      // MODEL_NOT_FOUND → try next model
     }
 
     return NextResponse.json(
       {
-        error: `AI sedang mengalami gangguan: ${lastError}. Coba lagi nanti.`,
+        error: userFacingMessage(lastType, lastMsg),
+        errorType: lastType,
+        detail: lastMsg,
       },
-      { status: 500 }
+      {
+        status:
+          lastType === "INVALID_API_KEY" || lastType === "ACCESS_DENIED"
+            ? 403
+            : lastType === "QUOTA_EXCEEDED" || lastType === "RATE_LIMITED"
+              ? 429
+              : 500,
+      }
     );
   } catch (error: any) {
-    console.error("[AI ERROR]", error?.message);
+    console.error("[AI CHAT]", error?.message);
     return NextResponse.json(
-      { error: "AI sedang mengalami gangguan. Silakan coba lagi." },
+      { error: "AI sedang mengalami gangguan. Silakan coba lagi.", errorType: "UNKNOWN_ERROR" },
       { status: 500 }
     );
   }

@@ -271,7 +271,7 @@ export default function AdminPage() {
                     value={config.geminiApiKey}
                     onChange={(e) => setConfig({ ...config, geminiApiKey: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-black transition-colors pr-12 font-mono"
-                    placeholder="Masukkan Gemini API Key"
+                    placeholder="Tempel API Key dari AI Studio (AQ... atau format Google lainnya)"
                   />
                   <button
                     type="button"
@@ -290,15 +290,13 @@ export default function AdminPage() {
                 <label className="block text-sm font-medium text-black mb-2">Model</label>
                 <select
                   value={config.geminiModel}
-                  onChange={(e) => setConfig({ ...config, geminiModel: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-black transition-colors"
-                >
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
-                  <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
-                  <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                  <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
-                  <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite</option>
-                  <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
+                  onChange={(e) =>
+                  <option value="gemini-2.5-flash">gemini-2.5-flash (Recommended)</option>
+                  <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
+                  <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                  <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite</option>
+                  <option value="gemini-flash-latest">gemini-flash-latest</option>
+                  <option value="gemini-2.5-pro">gemini-2.5-pro</option>
                 </select>
               </div>
             </div>
@@ -332,6 +330,10 @@ export default function AdminPage() {
                     {testResult.message && <p className="mt-1 opacity-80">{testResult.message}</p>}
                     {testResult.hint && <p className="mt-2 text-xs">{testResult.hint}</p>}
                     {testResult.response && <p className="mt-1">Response: {testResult.response}</p>}
+                    {testResult.keyPrefix && <p className="mt-1 text-xs">Key: {testResult.keyPrefix}</p>}
+                    {testResult.availableModels?.length > 0 && (
+                      <p className="mt-2 text-xs opacity-80">Models tersedia: {testResult.availableModels.slice(0,8).join(", ")}</p>
+                    )}
                   </div>
                 )}
               </div>

@@ -1,119 +1,117 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getGeminiKey, getGeminiModel, setAppConfig } from "@/lib/app-config";
+import {
+  geminiGenerateContent,
+  geminiListModels,
+  resolveGeminiKey,
+  DEFAULT_MODELS,
+  userFacingMessage,
+} from "@/lib/gemini";
 
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-
-function classifyError(status: number, message: string): string {
-  const m = (message || "").toLowerCase();
-  if (status === 401 || m.includes("api key") || m.includes("api_key") || m.includes("invalid"))
-    return "INVALID_API_KEY";
-  if (status === 403 || m.includes("denied") || m.includes("permission") || m.includes("blocked"))
-    return "ACCESS_DENIED";
-  if (status === 404 || m.includes("not found") || m.includes("not supported"))
-    return "MODEL_NOT_FOUND";
-  if (status === 429 || m.includes("quota") || m.includes("rate"))
-    return "QUOTA_EXCEEDED";
-  if (status >= 500) return "PROVIDER_TEMPORARY_ERROR";
-  if (m.includes("billing")) return "BILLING_REQUIRED";
-  return "UNKNOWN_ERROR";
-}
+export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    // Optional: save key from test form
-    if (body.geminiApiKey && body.adminPassword === "admin123") {
+
+    // Admin can pass key to test before/while saving
+    if (body.adminPassword === "admin123" && body.geminiApiKey) {
       setAppConfig({
-        geminiApiKey: body.geminiApiKey,
+        geminiApiKey: String(body.geminiApiKey).trim(),
         geminiModel: body.geminiModel || getGeminiModel(),
       });
     }
 
-    const key = body.geminiApiKey || getGeminiKey();
-    let model = body.geminiModel || getGeminiModel() || "gemini-2.5-flash";
-    if (model.includes("1.5") || model.includes("1.0")) model = "gemini-2.5-flash";
+    const apiKey = resolveGeminiKey(
+      body.geminiApiKey || getGeminiKey(),
+      process.env.GEMINI_API_KEY
+    );
 
-    if (!key) {
+    if (!apiKey) {
       return NextResponse.json({
+        success: false,
         status: "error",
+        errorType: "GEMINI_API_KEY_MISSING",
+        message: userFacingMessage("GEMINI_API_KEY_MISSING"),
         configured: false,
-        errorType: "MISSING_KEY",
-        message: "API Key belum diisi",
       });
     }
 
-    const fallbacks = [
-      model,
-      "gemini-2.5-flash",
-      "gemini-2.5-flash-lite",
-      "gemini-2.0-flash",
-      "gemini-2.0-flash-lite",
-    ];
-    const tried: string[] = [];
-    let lastStatus = 0;
-    let lastMsg = "";
+    // Optional: discover models for this key
+    const available = await geminiListModels(apiKey);
 
-    for (const m of [...new Set(fallbacks)]) {
-      tried.push(m);
-      try {
-        const res = await fetch(`${GEMINI_URL}/${m}:generateContent?key=${key}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: "Jawab hanya: OK" }] }],
-            generationConfig: { maxOutputTokens: 16 },
-          }),
+    let primary =
+      body.geminiModel || getGeminiModel() || process.env.GEMINI_MODEL || "gemini-2.5-flash";
+
+    // Prefer models that actually exist for this key
+    const candidates = [
+      primary,
+      ...DEFAULT_MODELS,
+      ...available.filter((m) => m.includes("flash")),
+    ];
+    const unique = [...new Set(candidates)];
+
+    const tried: string[] = [];
+    for (const model of unique) {
+      tried.push(model);
+      const result = await geminiGenerateContent({
+        apiKey,
+        model,
+        contents: [{ role: "user", parts: [{ text: "Reply with exactly: OK" }] }],
+        generationConfig: { maxOutputTokens: 16, temperature: 0 },
+        timeoutMs: 20000,
+      });
+
+      if (result.ok) {
+        // Persist working model as preferred
+        if (body.adminPassword === "admin123") {
+          setAppConfig({ geminiModel: result.model });
+        }
+        return NextResponse.json({
+          success: true,
+          status: "connected",
+          provider: "google-gemini",
+          model: result.model,
+          response: result.text.slice(0, 80),
+          availableModels: available.slice(0, 30),
+          tried,
+          configured: true,
+          keyPrefix: apiKey.slice(0, 4) + "…", // AQ… or AIza… — not the secret
         });
-        lastStatus = res.status;
-        if (res.ok) {
-          const data = await res.json();
-          const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "OK";
-          return NextResponse.json({
-            status: "ok",
-            provider: "google-gemini",
-            model: m,
-            configured: true,
-            response: text.slice(0, 100),
-            tried,
-          });
-        }
-        const err = await res.json().catch(() => ({}));
-        lastMsg = err.error?.message || `HTTP ${res.status}`;
-        const errType = classifyError(res.status, lastMsg);
-        // Don't retry on auth errors
-        if (errType === "INVALID_API_KEY" || errType === "ACCESS_DENIED") {
-          return NextResponse.json({
-            status: "error",
-            provider: "google-gemini",
-            model: m,
-            configured: true,
-            errorType: errType,
-            message: lastMsg,
-            tried,
-            hint:
-              errType === "ACCESS_DENIED"
-                ? "Buat API key baru di https://aistudio.google.com/apikey tanpa restriksi IP/HTTP referrer. Aktifkan Generative Language API."
-                : "API Key tidak valid. Salin ulang key dari Google AI Studio.",
-          });
-        }
-      } catch (e: any) {
-        lastMsg = e.message || "Network error";
-        lastStatus = 0;
+      }
+
+      if (result.errorType === "INVALID_API_KEY" || result.errorType === "ACCESS_DENIED") {
+        return NextResponse.json({
+          success: false,
+          status: "error",
+          provider: "google-gemini",
+          model,
+          errorType: result.errorType,
+          message: userFacingMessage(result.errorType, result.message),
+          detail: result.message,
+          availableModels: available.slice(0, 30),
+          tried,
+          configured: true,
+          keyPrefix: apiKey.slice(0, 4) + "…",
+        });
       }
     }
 
     return NextResponse.json({
+      success: false,
       status: "error",
       provider: "google-gemini",
-      model,
-      configured: true,
-      errorType: classifyError(lastStatus, lastMsg),
-      message: lastMsg,
+      errorType: "MODEL_NOT_FOUND",
+      message: "Tidak ada model yang merespons untuk key ini. Cek akses API di Google AI Studio.",
+      availableModels: available.slice(0, 30),
       tried,
+      configured: true,
+      keyPrefix: apiKey.slice(0, 4) + "…",
     });
   } catch (e: any) {
     console.error("[AI TEST]", e?.message);
     return NextResponse.json({
+      success: false,
       status: "error",
       errorType: "UNKNOWN_ERROR",
       message: e?.message || "Test gagal",
@@ -122,12 +120,12 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
-  const key = getGeminiKey();
+  const key = resolveGeminiKey(getGeminiKey(), process.env.GEMINI_API_KEY);
   return NextResponse.json({
-    status: key ? "configured" : "missing_key",
-    provider: "google-gemini",
-    model: getGeminiModel(),
+    provider: "Google Gemini",
     configured: !!key,
-    keyLength: key ? key.length : 0,
+    status: key ? "configured" : "missing_key",
+    model: getGeminiModel(),
+    keyPrefix: key ? key.slice(0, 4) + "…" : null,
   });
 }
