@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createCompetition } from "@/lib/competition-store";
+import { createCompetition, serializeForToken } from "@/lib/competition-store";
 import { getQuestionsForCategory } from "@/lib/question-bank";
+
+export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,21 +28,25 @@ export async function POST(request: NextRequest) {
       createdBy: teacherId || "guruku",
     });
 
-    // Build invite URL from the actual request host (production domain)
-    // Avoid preview deployment URLs that require Vercel login
+    // Verify immediately
+    const { getCompetitionByCode } = await import("@/lib/competition-store");
+    const verified = getCompetitionByCode(comp.inviteCode);
+    if (!verified) {
+      return NextResponse.json(
+        { error: "Kompetisi dibuat tapi gagal diverifikasi. Coba lagi." },
+        { status: 500 }
+      );
+    }
+
     const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
     const proto = request.headers.get("x-forwarded-proto") || "https";
-    let baseUrl = process.env.APP_URL || "";
-    if (!baseUrl && host) {
-      // Prefer non-preview production URL
-      if (host.includes("vercel.app") && host.includes("-")) {
-        // Preview URL pattern: project-hash-team.vercel.app -> use env or relative
-        baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${proto}://${host}`;
-      } else {
-        baseUrl = `${proto}://${host}`;
-      }
-    }
+    let baseUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "";
+    if (!baseUrl && host) baseUrl = `${proto}://${host}`;
     if (!baseUrl) baseUrl = "https://websitekelas-xtkj-rpl-tkkr.vercel.app";
+
+    // Payload for cross-instance hydration (base64url)
+    const payload = serializeForToken(comp);
+    const token = Buffer.from(JSON.stringify(payload)).toString("base64url");
 
     return NextResponse.json({
       success: true,
@@ -50,12 +56,13 @@ export async function POST(request: NextRequest) {
         name: comp.name,
         category: comp.category,
         questionCount: comp.questions.length,
-        inviteUrl: `${baseUrl}/join/${comp.inviteCode}`,
+        inviteUrl: `${baseUrl}/join/${comp.inviteCode}?p=${token}`,
         status: comp.status,
+        token,
       },
     });
   } catch (e: any) {
-    console.error(e);
+    console.error("[CREATE COMP]", e?.message);
     return NextResponse.json({ error: e.message || "Gagal membuat kompetisi" }, { status: 500 });
   }
 }

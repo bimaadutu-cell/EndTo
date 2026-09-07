@@ -5,15 +5,29 @@ import {
   nextQuestion,
   getLeaderboard,
   submitAnswer,
+  hydrateCompetition,
+  type Competition,
 } from "@/lib/competition-store";
+
+function tryHydrate(token?: string | null) {
+  if (!token) return;
+  try {
+    const json = Buffer.from(token, "base64url").toString("utf8");
+    const data = JSON.parse(json) as Competition;
+    if (data?.id) hydrateCompetition(data);
+  } catch {}
+}
+
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const token = request.nextUrl.searchParams.get("p") || request.nextUrl.searchParams.get("token");
+  if (token) tryHydrate(token);
   const comp = getCompetitionById(id);
-  if (!comp) return NextResponse.json({ error: "Tidak ditemukan" }, { status: 404 });
+  if (!comp) return NextResponse.json({ error: "Tidak ditemukan. Buka ulang dari link undangan guru." }, { status: 404 });
 
   const q = comp.questions[comp.currentQuestionIndex];
   return NextResponse.json({
@@ -51,7 +65,8 @@ export async function POST(
 ) {
   const { id } = await params;
   const body = await request.json();
-  const { action, teacherId, sessionToken, questionId, answerIndex } = body;
+  const { action, teacherId, sessionToken, questionId, answerIndex, token } = body;
+  tryHydrate(token);
 
   if (action === "start") {
     const result = startCompetition(id, teacherId || "guruku");

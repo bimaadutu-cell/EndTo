@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Trophy, Users, AlertCircle, Loader2 } from "lucide-react";
 
-export default function JoinPage() {
+function JoinInner() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const code = String(params?.inviteCode || "").toUpperCase().trim();
+  const token = searchParams.get("p") || searchParams.get("token") || "";
 
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -31,7 +33,9 @@ export default function JoinPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/competitions/join?code=${encodeURIComponent(code)}`);
+        let url = `/api/competitions/join?code=${encodeURIComponent(code)}`;
+        if (token) url += `&p=${encodeURIComponent(token)}`;
+        const res = await fetch(url, { cache: "no-store" });
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
         if (!res.ok) {
@@ -42,9 +46,7 @@ export default function JoinPage() {
           setError("");
         }
       } catch {
-        if (!cancelled) {
-          setError("Gagal memuat undangan. Coba refresh halaman.");
-        }
+        if (!cancelled) setError("Gagal memuat undangan. Coba refresh.");
       } finally {
         if (!cancelled) setChecking(false);
       }
@@ -53,7 +55,7 @@ export default function JoinPage() {
     return () => {
       cancelled = true;
     };
-  }, [code]);
+  }, [code, token]);
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,7 +69,12 @@ export default function JoinPage() {
       const res = await fetch("/api/competitions/join", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inviteCode: code, playerName: name.trim() }),
+        body: JSON.stringify({
+          inviteCode: code,
+          playerName: name.trim(),
+          token: token || undefined,
+        }),
+        cache: "no-store",
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -84,6 +91,8 @@ export default function JoinPage() {
             playerId: data.player.id,
           })
         );
+        // Keep token for lobby hydration on other routes
+        if (token) localStorage.setItem(`comp_token_${data.competition.id}`, token);
       } catch {}
       router.push(`/kompetisi/${data.competition.id}/lobby`);
     } catch {
@@ -115,7 +124,7 @@ export default function JoinPage() {
             <div>
               <p className="text-sm text-red-700 font-medium">{error}</p>
               <p className="text-xs text-red-500 mt-1">
-                Pastikan kode benar dan kompetisi masih aktif. Minta guru membuat kompetisi baru jika perlu.
+                Gunakan <strong>link lengkap</strong> dari guru (bukan hanya kode). Link berisi data kompetisi.
               </p>
             </div>
           </div>
@@ -131,8 +140,7 @@ export default function JoinPage() {
 
             <div className="mb-6 flex items-center justify-center gap-2 text-sm text-gray-500">
               <Users className="w-4 h-4" />
-              {info.playerCount} peserta sudah bergabung
-              {info.category && <span>· {info.category}</span>}
+              {info.playerCount} peserta · {info.category}
             </div>
 
             {error && (
@@ -181,5 +189,19 @@ export default function JoinPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function JoinPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin" />
+        </div>
+      }
+    >
+      <JoinInner />
+    </Suspense>
   );
 }

@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, AlertCircle, Play } from "lucide-react";
+import { ArrowLeft, Loader2, AlertCircle, Play, RefreshCw } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+
+type PlayerState = "idle" | "loading" | "playing" | "error";
 
 export default function FilmDetailPage() {
   const params = useParams();
@@ -14,7 +16,9 @@ export default function FilmDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeServer, setActiveServer] = useState(1);
-  const [playing, setPlaying] = useState(false);
+  const [playerState, setPlayerState] = useState<PlayerState>("idle");
+  const [iframeKey, setIframeKey] = useState(0);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!id) {
@@ -30,7 +34,8 @@ export default function FilmDetailPage() {
           setError(data.error || "Film tidak ditemukan");
         } else {
           setMovie(data);
-          setPlaying(true); // autoplay attempt
+          // Auto-start player
+          setPlayerState("loading");
         }
       } catch {
         setError("Gagal memuat detail film");
@@ -40,11 +45,37 @@ export default function FilmDetailPage() {
     })();
   }, [id]);
 
+  // Timeout: if still loading after 12s → error
+  useEffect(() => {
+    if (playerState === "loading") {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => {
+        setPlayerState((s) => (s === "loading" ? "error" : s));
+      }, 12000);
+    }
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [playerState, activeServer, iframeKey]);
+
   const servers = [
     { id: 1, name: "Server 1", src: `https://vidsrc.to/embed/movie/${id}` },
     { id: 2, name: "Server 2", src: `https://www.2embed.cc/embed/${id}` },
     { id: 3, name: "Server 3", src: `https://multiembed.mov/?video_id=${id}&tmdb=1` },
   ];
+
+  const currentSrc = servers.find((s) => s.id === activeServer)?.src || "";
+
+  const retry = () => {
+    setPlayerState("loading");
+    setIframeKey((k) => k + 1);
+  };
+
+  const switchServer = (sid: number) => {
+    setActiveServer(sid);
+    setPlayerState("loading");
+    setIframeKey((k) => k + 1);
+  };
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
@@ -66,7 +97,9 @@ export default function FilmDetailPage() {
               <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
               <div>
                 <p className="text-sm text-red-700">{error}</p>
-                <Link href="/film" className="text-sm underline mt-2 inline-block">Kembali ke daftar film</Link>
+                <Link href="/film" className="text-sm underline mt-2 inline-block">
+                  Kembali ke daftar film
+                </Link>
               </div>
             </div>
           )}
@@ -92,19 +125,13 @@ export default function FilmDetailPage() {
                 </div>
               </div>
 
-              {/* Server selector */}
-              <div className="flex gap-2 mb-4">
+              <div className="flex gap-2 mb-4 flex-wrap">
                 {servers.map((s) => (
                   <button
                     key={s.id}
-                    onClick={() => {
-                      setActiveServer(s.id);
-                      setPlaying(true);
-                    }}
+                    onClick={() => switchServer(s.id)}
                     className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                      activeServer === s.id && playing
-                        ? "bg-black text-white"
-                        : "bg-gray-100 text-gray-700"
+                      activeServer === s.id ? "bg-black text-white" : "bg-gray-100 text-gray-700"
                     }`}
                   >
                     {s.name}
@@ -112,32 +139,56 @@ export default function FilmDetailPage() {
                 ))}
               </div>
 
-              {/* Player - stays on page, no new tab */}
               <div className="aspect-video bg-black rounded-xl overflow-hidden relative">
-                {!playing ? (
+                {playerState === "idle" && (
                   <button
-                    onClick={() => setPlaying(true)}
-                    className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white hover:bg-white/5 transition-colors"
+                    onClick={() => setPlayerState("loading")}
+                    className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white hover:bg-white/5"
                   >
                     <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center">
                       <Play className="w-8 h-8 fill-white" />
                     </div>
                     <span className="text-sm">Putar Film</span>
                   </button>
-                ) : (
-                  <iframe
-                    key={`srv-${activeServer}-${id}`}
-                    src={servers.find((s) => s.id === activeServer)?.src}
-                    className="w-full h-full absolute inset-0"
-                    allowFullScreen
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                    referrerPolicy="no-referrer"
-                    title={movie.title}
-                  />
+                )}
+
+                {(playerState === "loading" || playerState === "playing") && (
+                  <>
+                    {playerState === "loading" && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
+                        <Loader2 className="w-10 h-10 animate-spin text-white mb-2" />
+                        <p className="text-white text-sm">Memuat video...</p>
+                      </div>
+                    )}
+                    <iframe
+                      key={`srv-${activeServer}-${iframeKey}`}
+                      src={currentSrc}
+                      className="w-full h-full absolute inset-0"
+                      allowFullScreen
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                      referrerPolicy="no-referrer"
+                      title={movie.title}
+                      onLoad={() => setPlayerState("playing")}
+                    />
+                  </>
+                )}
+
+                {playerState === "error" && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white p-6 text-center">
+                    <AlertCircle className="w-10 h-10 text-red-400" />
+                    <p className="font-medium">Video gagal dimuat</p>
+                    <p className="text-sm text-white/70">Coba ganti server atau tekan Coba Lagi</p>
+                    <button
+                      onClick={retry}
+                      className="mt-2 px-5 py-2 bg-white text-black rounded-lg text-sm font-medium flex items-center gap-2"
+                    >
+                      <RefreshCw className="w-4 h-4" /> Coba Lagi
+                    </button>
+                  </div>
                 )}
               </div>
               <p className="text-xs text-gray-400 mt-3 text-center">
-                Jika video tidak muncul, ganti Server. Player tetap di halaman ini (tidak buka tab baru).
+                Player tetap di halaman ini. Jika gagal, ganti Server 1/2/3.
               </p>
             </>
           )}
