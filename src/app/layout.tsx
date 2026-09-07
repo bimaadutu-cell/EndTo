@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
+import Providers from "@/components/Providers";
 
 export const metadata: Metadata = {
   title: "Website Kelas X TKJ/RPL/TKKR",
@@ -19,7 +20,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="id">
-      <body className="bg-white text-black antialiased">{children}</body>
+      <body className="bg-white text-black antialiased"><Providers>{children}</Providers></body>
     </html>
   );
 }

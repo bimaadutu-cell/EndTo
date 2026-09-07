@@ -16,6 +16,7 @@ export default function AdminPage() {
     geminiModel: "gemini-2.5-flash",
     tmdbApiKey: "",
     instagramUrl: "https://www.instagram.com/xten_alliance?stkn=eXdkbzA1M2JpY2pw",
+    musicUrl: "",
     temperature: 0.7,
     maxOutputTokens: 2048,
     systemPrompt: "Kamu adalah asisten pembelajaran untuk siswa kelas X.",
@@ -25,6 +26,8 @@ export default function AdminPage() {
   const [showTmdbKey, setShowTmdbKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<"general" | "ai" | "film">("general");
 
   useEffect(() => {
@@ -54,6 +57,28 @@ export default function AdminPage() {
     }
   };
 
+  const handleTestAI = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/ai/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adminPassword: "admin123",
+          geminiApiKey: config.geminiApiKey,
+          geminiModel: config.geminiModel,
+        }),
+      });
+      const data = await res.json();
+      setTestResult(data);
+    } catch (e: any) {
+      setTestResult({ status: "error", errorType: "NETWORK_ERROR", message: e.message });
+    } finally {
+      setTesting(false);
+    }
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
     setError("");
@@ -68,6 +93,7 @@ export default function AdminPage() {
           geminiModel: config.geminiModel,
           tmdbApiKey: config.tmdbApiKey,
           instagramUrl: config.instagramUrl,
+          musicUrl: config.musicUrl,
         }),
       });
       const data = await res.json();
@@ -267,14 +293,12 @@ export default function AdminPage() {
                   onChange={(e) => setConfig({ ...config, geminiModel: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-black transition-colors"
                 >
-                  <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Recommended)</option>
-                  <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
-                  <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
-                  <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
-                  <option value="gemini-3.7-flash">Gemini 3.7 Flash</option>
-                  <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
                   <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
+                  <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                  <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
+                  <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite</option>
+                  <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
                 </select>
               </div>
             </div>
@@ -285,6 +309,33 @@ export default function AdminPage() {
           <div className="border border-gray-200 rounded-2xl p-6 mb-8">
             <div className="flex items-center gap-3 mb-6">
               <Film className="w-6 h-6 text-black" />
+              <div className="mt-4 flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={handleTestAI}
+                  disabled={testing || !config.geminiApiKey}
+                  className="w-full py-3 border border-gray-300 rounded-xl font-medium hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {testing ? "Testing AI Connection..." : "Test AI Connection"}
+                </button>
+                {testResult && (
+                  <div className={`p-4 rounded-xl text-sm border ${
+                    testResult.status === "ok"
+                      ? "bg-green-50 border-green-200 text-green-800"
+                      : "bg-red-50 border-red-200 text-red-800"
+                  }`}>
+                    <p className="font-bold mb-1">
+                      {testResult.status === "ok" ? "AI CONNECTION SUCCESSFUL" : "AI CONNECTION FAILED"}
+                    </p>
+                    {testResult.model && <p>Model: {testResult.model}</p>}
+                    {testResult.errorType && <p>Type: {testResult.errorType}</p>}
+                    {testResult.message && <p className="mt-1 opacity-80">{testResult.message}</p>}
+                    {testResult.hint && <p className="mt-2 text-xs">{testResult.hint}</p>}
+                    {testResult.response && <p className="mt-1">Response: {testResult.response}</p>}
+                  </div>
+                )}
+              </div>
+
               <h2 className="text-lg font-bold text-black">TMDB (Film Database)</h2>
             </div>
 
@@ -312,6 +363,23 @@ export default function AdminPage() {
             </div>
           </div>
         )}
+
+        <div className="border border-gray-200 rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-black mb-4">Musik Latar (Public)</h2>
+          <label className="block text-sm font-medium text-black mb-2">URL MP3</label>
+          <input
+            type="url"
+            value={config.musicUrl || ""}
+            onChange={(e) => setConfig({ ...config, musicUrl: e.target.value })}
+            placeholder="https://example.com/musik-kelas.mp3"
+            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-black"
+          />
+          <p className="text-xs text-gray-500 mt-2">
+            Tempel URL file MP3 publik. Musik diputar di seluruh website tanpa restart saat pindah menu.
+            File besar host di cloud (Google Drive public, S3, dll) lalu tempel link direct-nya di sini.
+            Maksimal praktis tergantung host; Vercel tidak cocok untuk upload 2GB langsung.
+          </p>
+        </div>
 
         <div className="flex items-center justify-end gap-4">
           {saveSuccess && (

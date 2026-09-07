@@ -10,6 +10,12 @@ const CATEGORIES = [
   { id: "matematika", name: "Matematika", icon: "📐" },
   { id: "sains", name: "Sains", icon: "🔬" },
   { id: "agama", name: "Agama", icon: "📖" },
+  { id: "html", name: "HTML", icon: "🌐" },
+  { id: "css", name: "CSS", icon: "🎨" },
+  { id: "javascript", name: "JavaScript", icon: "⚡" },
+  { id: "networking", name: "Jaringan", icon: "📡" },
+  { id: "cybersecurity", name: "Cyber Security", icon: "🔒" },
+  { id: "all", name: "Campuran", icon: "🎲" },
 ];
 
 export default function CreateCompetitionPage() {

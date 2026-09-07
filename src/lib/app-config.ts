@@ -1,12 +1,9 @@
-// Server-side shared config. Admin saves keys here so ALL users can use them.
-// Note: On Vercel serverless, this persists per warm instance.
-// For permanent storage, also set GEMINI_API_KEY / TMDB_API_KEY in Vercel Environment Variables.
-
 export type AppConfig = {
   geminiApiKey: string;
   geminiModel: string;
   tmdbApiKey: string;
   instagramUrl: string;
+  musicUrl: string;
   updatedAt: number;
 };
 
@@ -21,6 +18,7 @@ export function getAppConfig(): AppConfig {
       geminiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
       tmdbApiKey: process.env.TMDB_API_KEY || "",
       instagramUrl: "",
+      musicUrl: "",
       updatedAt: 0,
     }
   );
@@ -33,7 +31,6 @@ export function setAppConfig(partial: Partial<AppConfig>): AppConfig {
     ...partial,
     updatedAt: Date.now(),
   };
-  // Don't wipe keys with empty strings unless intentional
   if (partial.geminiApiKey === "") next.geminiApiKey = current.geminiApiKey;
   if (partial.tmdbApiKey === "") next.tmdbApiKey = current.tmdbApiKey;
   globalStore.__appConfig = next;

@@ -30,6 +30,7 @@ export default function FilmDetailPage() {
           setError(data.error || "Film tidak ditemukan");
         } else {
           setMovie(data);
+          setPlaying(true); // autoplay attempt
         }
       } catch {
         setError("Gagal memuat detail film");
