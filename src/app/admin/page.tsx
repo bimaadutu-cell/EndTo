@@ -282,7 +282,11 @@ export default function AdminPage() {
                   </button>
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  Dapatkan API key dari <a href="https://makersuite.google.com/app/apikey" target="_blank" className="underline">Google AI Studio</a>
+                  Dapatkan API key dari{" "}
+                  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="underline">
+                    Google AI Studio
+                  </a>
+                  . Support format AQ... dan AIza...
                 </p>
               </div>
 
@@ -290,7 +294,9 @@ export default function AdminPage() {
                 <label className="block text-sm font-medium text-black mb-2">Model</label>
                 <select
                   value={config.geminiModel}
-                  onChange={(e) =>
+                  onChange={(e) => setConfig({ ...config, geminiModel: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-black bg-white"
+                >
                   <option value="gemini-2.5-flash">gemini-2.5-flash (Recommended)</option>
                   <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
                   <option value="gemini-2.0-flash">gemini-2.0-flash</option>
@@ -299,15 +305,8 @@ export default function AdminPage() {
                   <option value="gemini-2.5-pro">gemini-2.5-pro</option>
                 </select>
               </div>
-            </div>
-          </div>
-        )}
 
-        {activeTab === "film" && (
-          <div className="border border-gray-200 rounded-2xl p-6 mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <Film className="w-6 h-6 text-black" />
-              <div className="mt-4 flex flex-col gap-3">
+              <div className="mt-2 flex flex-col gap-3">
                 <button
                   type="button"
                   onClick={handleTestAI}
@@ -317,27 +316,40 @@ export default function AdminPage() {
                   {testing ? "Testing AI Connection..." : "Test AI Connection"}
                 </button>
                 {testResult && (
-                  <div className={`p-4 rounded-xl text-sm border ${
-                    testResult.status === "ok"
-                      ? "bg-green-50 border-green-200 text-green-800"
-                      : "bg-red-50 border-red-200 text-red-800"
-                  }`}>
+                  <div
+                    className={`p-4 rounded-xl text-sm border ${
+                      testResult.success || testResult.status === "ok" || testResult.status === "connected"
+                        ? "bg-green-50 border-green-200 text-green-800"
+                        : "bg-red-50 border-red-200 text-red-800"
+                    }`}
+                  >
                     <p className="font-bold mb-1">
-                      {testResult.status === "ok" ? "AI CONNECTION SUCCESSFUL" : "AI CONNECTION FAILED"}
+                      {testResult.success || testResult.status === "ok" || testResult.status === "connected"
+                        ? "AI CONNECTION SUCCESSFUL"
+                        : "AI CONNECTION FAILED"}
                     </p>
                     {testResult.model && <p>Model: {testResult.model}</p>}
                     {testResult.errorType && <p>Type: {testResult.errorType}</p>}
                     {testResult.message && <p className="mt-1 opacity-80">{testResult.message}</p>}
-                    {testResult.hint && <p className="mt-2 text-xs">{testResult.hint}</p>}
+                    {testResult.detail && <p className="mt-1 text-xs opacity-70">{testResult.detail}</p>}
                     {testResult.response && <p className="mt-1">Response: {testResult.response}</p>}
                     {testResult.keyPrefix && <p className="mt-1 text-xs">Key: {testResult.keyPrefix}</p>}
                     {testResult.availableModels?.length > 0 && (
-                      <p className="mt-2 text-xs opacity-80">Models tersedia: {testResult.availableModels.slice(0,8).join(", ")}</p>
+                      <p className="mt-2 text-xs opacity-80">
+                        Models tersedia: {testResult.availableModels.slice(0, 8).join(", ")}
+                      </p>
                     )}
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        )}
 
+        {activeTab === "film" && (
+          <div className="border border-gray-200 rounded-2xl p-6 mb-8">
+            <div className="flex items-center gap-3 mb-6">
+              <Film className="w-6 h-6 text-black" />
               <h2 className="text-lg font-bold text-black">TMDB (Film Database)</h2>
             </div>
 
@@ -360,7 +372,10 @@ export default function AdminPage() {
                 </button>
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                Dapatkan API key dari <a href="https://www.themoviedb.org/settings/api" target="_blank" className="underline">TMDB</a>
+                Dapatkan API key dari{" "}
+                <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noreferrer" className="underline">
+                  TMDB
+                </a>
               </p>
             </div>
           </div>
