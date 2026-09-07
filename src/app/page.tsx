@@ -14,12 +14,13 @@ export default function HomePage() {
 
   useEffect(() => {
     setIsLoaded(true);
-    fetch("/api/config", { cache: "no-store" })
-      .then((res) => res.json())
-      .then((config) => {
-        if (config.instagramUrl) setInstagramUrl(config.instagramUrl);
-      })
-      .catch(() => {});
+    const config = localStorage.getItem("app_config");
+    if (config) {
+      const parsed = JSON.parse(config);
+      if (parsed.instagramUrl) {
+        setInstagramUrl(parsed.instagramUrl);
+      }
+    }
     // Welcome ONLY on full page load / refresh (not client-side navigation)
     try {
       const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
